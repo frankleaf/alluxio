@@ -12,6 +12,7 @@
 package alluxio.master.file;
 
 import alluxio.AlluxioURI;
+import alluxio.Constants;
 import alluxio.client.WriteType;
 import alluxio.collections.Pair;
 import alluxio.conf.PropertyKey;
@@ -47,9 +48,14 @@ import alluxio.master.file.meta.InodeTree.LockPattern;
 import alluxio.master.file.meta.LockedInodePath;
 import alluxio.master.file.meta.LockingScheme;
 import alluxio.master.file.meta.MountTable;
+import alluxio.master.file.meta.MutableInodeFile;
+import alluxio.master.file.meta.UfsAbsentPathCache;
 import alluxio.master.file.meta.UfsSyncPathCache;
 import alluxio.master.file.meta.UfsSyncUtils;
+import alluxio.master.journal.MergeJournalContext;
 import alluxio.master.metastore.ReadOnlyInodeStore;
+import alluxio.proto.journal.File;
+import alluxio.proto.journal.Journal;
 import alluxio.resource.CloseableResource;
 import alluxio.security.authorization.AccessControlList;
 import alluxio.security.authorization.DefaultAccessControlList;
@@ -69,10 +75,14 @@ import org.slf4j.LoggerFactory;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
@@ -113,6 +123,15 @@ import javax.annotation.Nullable;
  *
  */
 public class InodeSyncStream {
+  /**
+   * Return status of a sync result.
+   */
+  public enum SyncStatus {
+    OK,
+    FAILED,
+    NOT_NEEDED
+  }
+
   private static final Logger LOG = LoggerFactory.getLogger(InodeSyncStream.class);
 
   private static final FileSystemMasterCommonPOptions NO_TTL_OPTION =
@@ -203,17 +222,18 @@ public class InodeSyncStream {
    * @param isGetFileInfo whether the caller is {@link FileSystemMaster#getFileInfo}
    * @param forceSync whether to sync inode metadata no matter what
    * @param loadOnly whether to only load new metadata, rather than update existing metadata
+   * @param loadAlways whether to always load new metadata from the ufs, even if a file or
+   *                   directory has been previous found to not exist
    */
   public InodeSyncStream(LockingScheme rootPath, DefaultFileSystemMaster fsMaster,
       RpcContext rpcContext, DescendantType descendantType, FileSystemMasterCommonPOptions options,
       @Nullable FileSystemMasterAuditContext auditContext,
       @Nullable Function<LockedInodePath, Inode> auditContextSrcInodeFunc,
       @Nullable DefaultFileSystemMaster.PermissionCheckFunction permissionCheckOperation,
-      boolean isGetFileInfo, boolean forceSync, boolean loadOnly) {
+      boolean isGetFileInfo, boolean forceSync, boolean loadOnly, boolean loadAlways) {
     mPendingPaths = new ConcurrentLinkedQueue<>();
     mDescendantType = descendantType;
     mRpcContext = rpcContext;
-    mStatusCache = new UfsStatusCache(fsMaster.mSyncPrefetchExecutor);
     mMetadataSyncService = fsMaster.mSyncMetadataExecutor;
     mForceSync = forceSync;
     mRootScheme = rootPath;
@@ -230,6 +250,21 @@ public class InodeSyncStream {
     mAuditContext = auditContext;
     mAuditContextSrcInodeFunc = auditContextSrcInodeFunc;
     mPermissionCheckOperation = permissionCheckOperation;
+    // If an absent cache entry was more recent than this value, then it is valid for this sync
+    long validCacheTime;
+    if (loadOnly) {
+      if (loadAlways) {
+        validCacheTime = UfsAbsentPathCache.NEVER;
+      } else {
+        validCacheTime = UfsAbsentPathCache.ALWAYS;
+      }
+    } else {
+      long syncInterval = options.hasSyncIntervalMs() ? options.getSyncIntervalMs() :
+          ServerConfiguration.getMs(PropertyKey.USER_FILE_METADATA_SYNC_INTERVAL);
+      validCacheTime = System.currentTimeMillis() - syncInterval;
+    }
+    mStatusCache = new UfsStatusCache(fsMaster.mSyncPrefetchExecutor,
+        fsMaster.getAbsentPathCache(), validCacheTime);
   }
 
   /**
@@ -243,19 +278,22 @@ public class InodeSyncStream {
    * @param isGetFileInfo whether the caller is {@link FileSystemMaster#getFileInfo}
    * @param forceSync whether to sync inode metadata no matter what
    * @param loadOnly whether to only load new metadata, rather than update existing metadata
+   * @param loadAlways whether to always load new metadata from the ufs, even if a file or
+   *                   directory has been previous found to not exist
    */
   public InodeSyncStream(LockingScheme rootScheme, DefaultFileSystemMaster fsMaster,
       RpcContext rpcContext, DescendantType descendantType, FileSystemMasterCommonPOptions options,
-      boolean isGetFileInfo, boolean forceSync, boolean loadOnly) {
+      boolean isGetFileInfo, boolean forceSync, boolean loadOnly, boolean loadAlways) {
     this(rootScheme, fsMaster, rpcContext, descendantType, options, null, null, null,
-        isGetFileInfo, forceSync, loadOnly);
+        isGetFileInfo, forceSync, loadOnly, loadAlways);
   }
+
   /**
    * Sync the metadata according the the root path the stream was created with.
    *
-   * @return true if at least one path was synced
+   * @return SyncStatus object
    */
-  public boolean sync() throws AccessControlException, InvalidPathException {
+  public SyncStatus sync() throws AccessControlException, InvalidPathException {
     // The high-level process for the syncing is:
     // 1. Given an Alluxio path, determine if it is not consistent with the corresponding UFS path.
     //     this means the UFS path does not exist, or has metadata which differs from Alluxio
@@ -266,10 +304,10 @@ public class InodeSyncStream {
     int syncPathCount = 0;
     int failedSyncPathCount = 0;
     int stopNum = -1; // stop syncing when we've processed this many paths. -1 for infinite
-    long start = Long.MAX_VALUE;
-    if (LOG.isDebugEnabled()) {
-      start = System.currentTimeMillis();
+    if (!mRootScheme.shouldSync() && !mForceSync) {
+      return SyncStatus.NOT_NEEDED;
     }
+    Instant start = Instant.now();
     try (LockedInodePath path = mInodeTree.lockInodePath(mRootScheme)) {
       if (mAuditContext != null && mAuditContextSrcInodeFunc != null) {
         mAuditContext.setSrcInode(mAuditContextSrcInodeFunc.apply(path));
@@ -303,6 +341,7 @@ public class InodeSyncStream {
         | IOException e) {
       LogUtils.warnWithException(LOG, "Failed to sync metadata on root path {}",
           toString(), e);
+      failedSyncPathCount++;
     } finally {
       // regardless of the outcome, remove the UfsStatus for this path from the cache
       mStatusCache.remove(mRootScheme.getPath());
@@ -383,12 +422,17 @@ public class InodeSyncStream {
       }
     }
     if (LOG.isDebugEnabled()) {
-      long end = System.currentTimeMillis();
+      Instant end = Instant.now();
+      Duration elapsedTime = Duration.between(start, end);
       LOG.debug("synced {} paths ({} success, {} failed) in {} ms on {}",
-          syncPathCount + failedSyncPathCount, syncPathCount, failedSyncPathCount, end - start,
-          mRootScheme);
+          syncPathCount + failedSyncPathCount, syncPathCount, failedSyncPathCount,
+              elapsedTime.toMillis(), mRootScheme);
     }
     boolean success = syncPathCount > 0;
+    if (ServerConfiguration.getBoolean(PropertyKey.MASTER_METADATA_SYNC_REPORT_FAILURE)) {
+      // There should not be any failed or outstanding jobs
+      success = (failedSyncPathCount == 0) && mSyncPathJobs.isEmpty() && mPendingPaths.isEmpty();
+    }
     if (success) {
       // update the sync path cache for the root of the sync
       // TODO(gpang): Do we need special handling for failures and thread interrupts?
@@ -396,7 +440,7 @@ public class InodeSyncStream {
     }
     mStatusCache.cancelAllPrefetch();
     mSyncPathJobs.forEach(f -> f.cancel(true));
-    return success;
+    return success ? SyncStatus.OK : SyncStatus.FAILED;
   }
 
   /**
@@ -493,18 +537,29 @@ public class InodeSyncStream {
       }
       persistingLock.get().close();
 
-      UfsStatus cachedStatus = mStatusCache.getStatus(inodePath.getUri());
+      UfsStatus cachedStatus = null;
+      boolean fileNotFound = false;
+      try {
+        cachedStatus = mStatusCache.getStatus(inodePath.getUri());
+      } catch (FileNotFoundException e) {
+        fileNotFound = true;
+      }
       MountTable.Resolution resolution = mMountTable.resolve(inodePath.getUri());
       AlluxioURI ufsUri = resolution.getUri();
       try (CloseableResource<UnderFileSystem> ufsResource = resolution.acquireUfsResource()) {
         UnderFileSystem ufs = ufsResource.get();
         String ufsFingerprint;
         Fingerprint ufsFpParsed;
-        if (cachedStatus == null) {
+        // When the status is not cached and it was not due to file not found, we retry
+        if (fileNotFound) {
+          ufsFingerprint = Constants.INVALID_UFS_FINGERPRINT;
+          ufsFpParsed = Fingerprint.parse(ufsFingerprint);
+        } else if (cachedStatus == null) {
           // TODO(david): change the interface so that getFingerprint returns a parsed fingerprint
           ufsFingerprint = ufs.getFingerprint(ufsUri.toString());
           ufsFpParsed = Fingerprint.parse(ufsFingerprint);
         } else {
+          // When the status is cached
           Pair<AccessControlList, DefaultAccessControlList> aclPair =
               ufs.getAclPair(ufsUri.toString());
 
@@ -636,7 +691,6 @@ public class InodeSyncStream {
   private void loadMetadataForPath(LockedInodePath inodePath)
       throws InvalidPathException, AccessControlException, IOException, FileDoesNotExistException,
       FileAlreadyCompletedException, InvalidFileSizeException, BlockInfoException {
-
     UfsStatus status = mStatusCache.fetchStatusIfAbsent(inodePath.getUri(), mMountTable);
     LoadMetadataContext ctx = LoadMetadataContext.mergeFrom(
         LoadMetadataPOptions.newBuilder()
@@ -724,6 +778,53 @@ public class InodeSyncStream {
   }
 
   /**
+   * Merge inode entry with subsequent update inode and update inode file entries.
+   *
+   * @param entries list of journal entries
+   * @return a list of compacted journal entries
+   */
+  public static List<Journal.JournalEntry> mergeCreateComplete(
+      List<alluxio.proto.journal.Journal.JournalEntry> entries) {
+    List<alluxio.proto.journal.Journal.JournalEntry> newEntries = new ArrayList<>();
+    // file id : index in the newEntries, InodeFileEntry
+    Map<Long, Pair<Integer, MutableInodeFile>> fileEntryMap = new HashMap<>();
+    for (alluxio.proto.journal.Journal.JournalEntry oldEntry : entries) {
+      if (oldEntry.hasInodeFile()) {
+        // Use the old entry as a placeholder, to be replaced later
+        newEntries.add(oldEntry);
+        fileEntryMap.put(oldEntry.getInodeFile().getId(),
+            new Pair<>(newEntries.size() - 1,
+                MutableInodeFile.fromJournalEntry(oldEntry.getInodeFile())));
+      } else if (oldEntry.hasUpdateInode()) {
+        File.UpdateInodeEntry entry = oldEntry.getUpdateInode();
+        if (fileEntryMap.get(entry.getId()) == null) {
+          newEntries.add(oldEntry);
+          continue;
+        }
+        MutableInodeFile inode = fileEntryMap.get(entry.getId()).getSecond();
+        inode.updateFromEntry(entry);
+      } else if (oldEntry.hasUpdateInodeFile()) {
+        File.UpdateInodeFileEntry entry = oldEntry.getUpdateInodeFile();
+        if (fileEntryMap.get(entry.getId()) == null) {
+          newEntries.add(oldEntry);
+          continue;
+        }
+        MutableInodeFile inode = fileEntryMap.get(entry.getId()).getSecond();
+        inode.updateFromEntry(entry);
+      } else {
+        newEntries.add(oldEntry);
+      }
+    }
+    for (Pair<Integer, MutableInodeFile> pair : fileEntryMap.values()) {
+      // Replace the old entry place holder with the new entry,
+      // to create the file in the same place in the journal
+      newEntries.set(pair.getFirst(),
+          pair.getSecond().toJournalEntry());
+    }
+    return newEntries;
+  }
+
+  /**
    * Loads metadata for the file identified by the given path from UFS into Alluxio.
    *
    * This method doesn't require any specific type of locking on inodePath. If the path needs to be
@@ -797,15 +898,20 @@ public class InodeSyncStream {
       createFileContext.setOperationTimeMs(ufsLastModified);
     }
 
-    try (LockedInodePath writeLockedPath = inodePath.lockFinalEdgeWrite()) {
-      fsMaster.createFileInternal(rpcContext, writeLockedPath, createFileContext);
+    try (LockedInodePath writeLockedPath = inodePath.lockFinalEdgeWrite();
+         MergeJournalContext merger = new MergeJournalContext(rpcContext.getJournalContext(),
+             InodeSyncStream::mergeCreateComplete)) {
+      // We do not want to close this wrapRpcContext because it uses elements from another context
+      RpcContext wrapRpcContext = new RpcContext(
+          rpcContext.getBlockDeletionContext(), merger, rpcContext.getOperationContext());
+      fsMaster.createFileInternal(wrapRpcContext, writeLockedPath, createFileContext);
       CompleteFileContext completeContext =
           CompleteFileContext.mergeFrom(CompleteFilePOptions.newBuilder().setUfsLength(ufsLength))
               .setUfsStatus(context.getUfsStatus());
       if (ufsLastModified != null) {
         completeContext.setOperationTimeMs(ufsLastModified);
       }
-      fsMaster.completeFileInternal(rpcContext, writeLockedPath, completeContext);
+      fsMaster.completeFileInternal(wrapRpcContext, writeLockedPath, completeContext);
     } catch (FileAlreadyExistsException e) {
       // This may occur if a thread created or loaded the file before we got the write lock.
       // The file already exists, so nothing needs to be loaded.

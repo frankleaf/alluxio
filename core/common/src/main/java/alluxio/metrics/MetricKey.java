@@ -230,7 +230,58 @@ public final class MetricKey implements Comparable<MetricKey> {
   }
 
   // Master metrics
-  // Master status
+  // Absent cache stats
+  public static final MetricKey MASTER_ABSENT_CACHE_HITS =
+      new Builder(Name.MASTER_ABSENT_CACHE_HITS)
+          .setDescription("Number of cache hits on the absent cache")
+          .setMetricType(MetricType.COUNTER)
+          .build();
+  public static final MetricKey MASTER_ABSENT_CACHE_MISSES =
+      new Builder(Name.MASTER_ABSENT_CACHE_MISSES)
+          .setDescription("Number of cache misses on the absent cache")
+          .setMetricType(MetricType.COUNTER)
+          .build();
+  public static final MetricKey MASTER_ABSENT_CACHE_INVALIDATIONS =
+      new Builder(Name.MASTER_ABSENT_CACHE_INVALIDATIONS)
+          .setDescription("Number of invalidations on the absent cache")
+          .setMetricType(MetricType.COUNTER)
+          .build();
+  public static final MetricKey MASTER_ABSENT_CACHE_SIZE =
+      new Builder(Name.MASTER_ABSENT_CACHE_SIZE)
+          .setDescription("Size of the absent cache")
+          .setMetricType(MetricType.GAUGE)
+          .build();
+
+  // Edge cache stats
+  public static final MetricKey MASTER_EDGE_CACHE_EVICTIONS =
+      new Builder(Name.MASTER_EDGE_CACHE_EVICTIONS)
+          .setDescription("Total number of edges (inode metadata) that was evicted from cache. "
+              + "The edge cache is responsible for managing the mapping "
+              + "from (parentId, childName) to childId.")
+          .setMetricType(MetricType.GAUGE)
+          .build();
+  public static final MetricKey MASTER_EDGE_CACHE_HITS =
+      new Builder(Name.MASTER_EDGE_CACHE_HITS)
+          .setDescription("Total number of hits in the edge (inode metadata) cache. "
+              + "The edge cache is responsible for managing the mapping "
+              + "from (parentId, childName) to childId.")
+          .setMetricType(MetricType.GAUGE)
+          .build();
+  public static final MetricKey MASTER_EDGE_CACHE_LOAD_TIMES =
+      new Builder(Name.MASTER_EDGE_CACHE_LOAD_TIMES)
+          .setDescription("Total load times in the edge (inode metadata) cache "
+              + "that resulted from a cache miss. "
+              + "The edge cache is responsible for managing the mapping "
+              + "from (parentId, childName) to childId.")
+          .setMetricType(MetricType.GAUGE)
+          .build();
+  public static final MetricKey MASTER_EDGE_CACHE_MISSES =
+      new Builder(Name.MASTER_EDGE_CACHE_MISSES)
+          .setDescription("Total number of misses in the edge (inode metadata) cache. "
+              + "The edge cache is responsible for managing the mapping "
+              + "from (parentId, childName) to childId.")
+          .setMetricType(MetricType.GAUGE)
+          .build();
   public static final MetricKey MASTER_EDGE_CACHE_SIZE =
       new Builder(Name.MASTER_EDGE_CACHE_SIZE)
           .setDescription("Total number of edges (inode metadata) cached. "
@@ -243,9 +294,30 @@ public final class MetricKey implements Comparable<MetricKey> {
           .setDescription("Total number of currently pinned files")
           .setMetricType(MetricType.GAUGE)
           .build();
+  public static final MetricKey MASTER_INODE_CACHE_EVICTIONS =
+      new Builder(Name.MASTER_INODE_CACHE_EVICTIONS)
+          .setDescription("Total number of inodes that was evicted from the cache.")
+          .setMetricType(MetricType.GAUGE)
+          .build();
+  public static final MetricKey MASTER_INODE_CACHE_HITS =
+      new Builder(Name.MASTER_INODE_CACHE_HITS)
+          .setDescription("Total number of hits in the inodes (inode metadata) cache.")
+          .setMetricType(MetricType.GAUGE)
+          .build();
+  public static final MetricKey MASTER_INODE_CACHE_LOAD_TIMES =
+      new Builder(Name.MASTER_INODE_CACHE_LOAD_TIMES)
+          .setDescription("Total load times in the inodes (inode metadata) cache "
+              + "that resulted from a cache miss.")
+          .setMetricType(MetricType.GAUGE)
+          .build();
+  public static final MetricKey MASTER_INODE_CACHE_MISSES =
+      new Builder(Name.MASTER_INODE_CACHE_MISSES)
+          .setDescription("Total number of misses in the inodes (inode metadata) cache.")
+          .setMetricType(MetricType.GAUGE)
+          .build();
   public static final MetricKey MASTER_INODE_CACHE_SIZE =
       new Builder(Name.MASTER_INODE_CACHE_SIZE)
-          .setDescription("Total number of inodes (inode metadata) cached")
+          .setDescription("Total number of inodes (inode metadata) cached.")
           .setMetricType(MetricType.GAUGE)
           .build();
   public static final MetricKey MASTER_TOTAL_PATHS =
@@ -377,6 +449,27 @@ public final class MetricKey implements Comparable<MetricKey> {
           .setDescription("Total number of the GetNewBlock operations")
           .setMetricType(MetricType.COUNTER)
           .build();
+  public static final MetricKey MASTER_LISTING_CACHE_EVICTIONS =
+      new Builder(Name.MASTER_LISTING_CACHE_EVICTIONS)
+          .setDescription("The total number of evictions in master listing cache")
+          .setMetricType(MetricType.COUNTER)
+          .build();
+  public static final MetricKey MASTER_LISTING_CACHE_HITS =
+      new Builder(Name.MASTER_LISTING_CACHE_HITS)
+          .setDescription("The total number of hits in master listing cache")
+          .setMetricType(MetricType.COUNTER)
+          .build();
+  public static final MetricKey MASTER_LISTING_CACHE_LOAD_TIMES =
+      new Builder(Name.MASTER_LISTING_CACHE_LOAD_TIMES)
+          .setDescription("The total load time (in nanoseconds) in master listing cache "
+              + "that resulted from a cache miss.")
+          .setMetricType(MetricType.COUNTER)
+          .build();
+  public static final MetricKey MASTER_LISTING_CACHE_MISSES =
+      new Builder(Name.MASTER_LISTING_CACHE_MISSES)
+          .setDescription("The total number of misses in master listing cache")
+          .setMetricType(MetricType.COUNTER)
+          .build();
   public static final MetricKey MASTER_LISTING_CACHE_SIZE =
       new Builder(Name.MASTER_LISTING_CACHE_SIZE)
           .setDescription("The size of master listing cache")
@@ -433,13 +526,39 @@ public final class MetricKey implements Comparable<MetricKey> {
           .setDescription("The timer statistics of journal gain primacy")
           .setMetricType(MetricType.TIMER)
           .build();
+  public static final MetricKey MASTER_UFS_JOURNAL_CATCHUP_TIMER =
+      new Builder(Name.MASTER_UFS_JOURNAL_CATCHUP_TIMER)
+          .setDescription("The timer statistics of journal catchup")
+          .setMetricType(MetricType.TIMER)
+          .build();
   public static final MetricKey MASTER_UFS_JOURNAL_FAILURE_RECOVER_TIMER =
       new Builder(Name.MASTER_UFS_JOURNAL_FAILURE_RECOVER_TIMER)
           .setDescription("The timer statistics of ufs journal failure recover")
           .setMetricType(MetricType.TIMER)
           .build();
+  public static final MetricKey MASTER_UFS_JOURNAL_INITIAL_REPLAY_TIME_MS =
+      new Builder(Name.MASTER_UFS_JOURNAL_INITIAL_REPLAY_TIME_MS)
+          .setDescription("The process time of the ufs journal initial replay")
+          .setMetricType(MetricType.GAUGE)
+          .build();
 
   // Cluster metrics
+  public static final MetricKey CLUSTER_BYTES_READ_DIRECT =
+      new Builder(Name.CLUSTER_BYTES_READ_DIRECT)
+          .setDescription("Total number of bytes read from Alluxio storage managed by workers "
+              + "and underlying UFS if data cannot be found in the Alluxio storage "
+              + "without external RPC involved. This records data read "
+              + "by worker internal calls (e.g. clients embedded in workers).")
+          .setMetricType(MetricType.COUNTER)
+          .build();
+  public static final MetricKey CLUSTER_BYTES_READ_DIRECT_THROUGHPUT =
+      new Builder(Name.CLUSTER_BYTES_READ_DIRECT_THROUGHPUT)
+          .setDescription("Total number of bytes read from Alluxio storage managed by workers "
+              + "and underlying UFS if data cannot be found in the Alluxio storage "
+              + "without external RPC involved. This records data read "
+              + "by worker internal calls (e.g. clients embedded in workers).")
+          .setMetricType(MetricType.GAUGE)
+          .build();
   public static final MetricKey CLUSTER_BYTES_READ_REMOTE =
       new Builder(Name.CLUSTER_BYTES_READ_REMOTE)
           .setDescription("Total number of bytes read from Alluxio storage "
@@ -450,7 +569,7 @@ public final class MetricKey implements Comparable<MetricKey> {
           .build();
   public static final MetricKey CLUSTER_BYTES_READ_REMOTE_THROUGHPUT =
       new Builder(Name.CLUSTER_BYTES_READ_REMOTE_THROUGHPUT)
-          .setDescription("Bytes read throughput from Alluxio storage "
+          .setDescription("Bytes read per minute throughput from Alluxio storage "
               + "or underlying UFS if data does not exist in Alluxio storage "
               + "reported by all workers. This does not include "
               + "short-circuit local reads and domain socket reads")
@@ -464,7 +583,7 @@ public final class MetricKey implements Comparable<MetricKey> {
           .build();
   public static final MetricKey CLUSTER_BYTES_READ_DOMAIN_THROUGHPUT =
       new Builder(Name.CLUSTER_BYTES_READ_DOMAIN_THROUGHPUT)
-          .setDescription("Bytes read throughput from Alluxio storage "
+          .setDescription("Bytes read per minute throughput from Alluxio storage "
               + "via domain socket by all workers")
           .setMetricType(MetricType.GAUGE)
           .build();
@@ -476,7 +595,8 @@ public final class MetricKey implements Comparable<MetricKey> {
           .build();
   public static final MetricKey CLUSTER_BYTES_READ_LOCAL_THROUGHPUT =
       new Builder(Name.CLUSTER_BYTES_READ_LOCAL_THROUGHPUT)
-          .setDescription("Bytes throughput short-circuit read from local storage by all clients")
+          .setDescription("Bytes per minute throughput "
+              + "short-circuit read from local storage by all clients")
           .setMetricType(MetricType.GAUGE)
           .build();
   public static final MetricKey CLUSTER_BYTES_READ_UFS =
@@ -491,7 +611,7 @@ public final class MetricKey implements Comparable<MetricKey> {
           .build();
   public static final MetricKey CLUSTER_BYTES_READ_UFS_THROUGHPUT =
       new Builder(Name.CLUSTER_BYTES_READ_UFS_THROUGHPUT)
-          .setDescription("Bytes read throughput from all Alluxio UFSes by all workers")
+          .setDescription("Bytes read per minute throughput from all Alluxio UFSes by all workers")
           .setMetricType(MetricType.GAUGE)
           .build();
   public static final MetricKey CLUSTER_BYTES_WRITTEN_REMOTE =
@@ -503,7 +623,7 @@ public final class MetricKey implements Comparable<MetricKey> {
           .build();
   public static final MetricKey CLUSTER_BYTES_WRITTEN_REMOTE_THROUGHPUT =
       new Builder(Name.CLUSTER_BYTES_WRITTEN_REMOTE_THROUGHPUT)
-          .setDescription("Bytes write throughput to Alluxio storage in all workers "
+          .setDescription("Bytes write per minute throughput to Alluxio storage in all workers "
               + "or the underlying UFS. This does not include short-circuit local writes "
               + "and domain socket writes.")
           .setMetricType(MetricType.GAUGE)
@@ -516,7 +636,7 @@ public final class MetricKey implements Comparable<MetricKey> {
           .build();
   public static final MetricKey CLUSTER_BYTES_WRITTEN_DOMAIN_THROUGHPUT =
       new Builder(Name.CLUSTER_BYTES_WRITTEN_DOMAIN_THROUGHPUT)
-          .setDescription("Throughput of bytes written to Alluxio storage "
+          .setDescription("Throughput of bytes written per minute to Alluxio storage "
               + "via domain socket by all workers")
           .setMetricType(MetricType.GAUGE)
           .build();
@@ -528,7 +648,7 @@ public final class MetricKey implements Comparable<MetricKey> {
           .build();
   public static final MetricKey CLUSTER_BYTES_WRITTEN_LOCAL_THROUGHPUT =
       new Builder(Name.CLUSTER_BYTES_WRITTEN_LOCAL_THROUGHPUT)
-          .setDescription("Bytes throughput written to local storage by all clients")
+          .setDescription("Bytes per minute throughput written to local storage by all clients")
           .setMetricType(MetricType.GAUGE)
           .build();
   public static final MetricKey CLUSTER_BYTES_WRITTEN_UFS =
@@ -543,7 +663,7 @@ public final class MetricKey implements Comparable<MetricKey> {
           .build();
   public static final MetricKey CLUSTER_BYTES_WRITTEN_UFS_THROUGHPUT =
       new Builder(Name.CLUSTER_BYTES_WRITTEN_UFS_THROUGHPUT)
-          .setDescription("Bytes write throughput to all Alluxio UFSes by all workers")
+          .setDescription("Bytes write per minute throughput to all Alluxio UFSes by all workers")
           .setMetricType(MetricType.GAUGE)
           .build();
   public static final MetricKey CLUSTER_CAPACITY_TOTAL =
@@ -662,19 +782,39 @@ public final class MetricKey implements Comparable<MetricKey> {
           .setMetricType(MetricType.COUNTER)
           .setIsClusterAggregated(false)
           .build();
+  public static final MetricKey WORKER_BYTES_READ_DIRECT =
+      new Builder(Name.WORKER_BYTES_READ_DIRECT)
+          .setDescription("Total number of bytes read from Alluxio storage managed by this worker "
+              + "and underlying UFS if data cannot be found in the Alluxio storage "
+              + "without external RPC involved. This records data read "
+              + "by worker internal calls (e.g. a client embedded in this worker).")
+          .setMetricType(MetricType.COUNTER)
+          .setIsClusterAggregated(true)
+          .build();
+  public static final MetricKey WORKER_BYTES_READ_DIRECT_THROUGHPUT =
+      new Builder(Name.WORKER_BYTES_READ_DIRECT_THROUGHPUT)
+          .setDescription("Total number of bytes read from Alluxio storage managed by this worker "
+              + "and underlying UFS if data cannot be found in the Alluxio storage "
+              + "without external RPC involved. This records data read "
+              + "by worker internal calls (e.g. a client embedded in this worker).")
+          .setMetricType(MetricType.METER)
+          .setIsClusterAggregated(false)
+          .build();
   public static final MetricKey WORKER_BYTES_READ_REMOTE =
       new Builder(Name.WORKER_BYTES_READ_REMOTE)
           .setDescription("Total number of bytes read from Alluxio storage managed by this worker "
-              + "and underlying UFS if data cannot be found in the Alluxio storage. "
-              + "This does not include short-circuit local reads and domain socket reads.")
+              + "and underlying UFS if data cannot be found in the Alluxio storage "
+              + "via external RPC channel. This does not include "
+              + "short-circuit local reads and domain socket reads.")
           .setMetricType(MetricType.COUNTER)
           .setIsClusterAggregated(true)
           .build();
   public static final MetricKey WORKER_BYTES_READ_REMOTE_THROUGHPUT =
       new Builder(Name.WORKER_BYTES_READ_REMOTE_THROUGHPUT)
           .setDescription("Total number of bytes read from Alluxio storage managed by this worker "
-              + "and underlying UFS if data cannot be found in the Alluxio storage. "
-              + "This does not include short-circuit local reads and domain socket reads.")
+              + "and underlying UFS if data cannot be found in the Alluxio storage "
+              + "via external RPC channel. This does not include "
+              + "short-circuit local reads and domain socket reads.")
           .setMetricType(MetricType.METER)
           .setIsClusterAggregated(false)
           .build();
@@ -701,6 +841,22 @@ public final class MetricKey implements Comparable<MetricKey> {
   public static final MetricKey WORKER_BYTES_READ_UFS_THROUGHPUT =
       new MetricKey.Builder(Name.WORKER_BYTES_READ_UFS_THROUGHPUT)
           .setDescription("Bytes read throughput from all Alluxio UFSes by this worker")
+          .setMetricType(MetricType.METER)
+          .setIsClusterAggregated(false)
+          .build();
+  public static final MetricKey WORKER_BYTES_WRITTEN_DIRECT =
+      new Builder(Name.WORKER_BYTES_WRITTEN_DIRECT)
+          .setDescription("Total number of bytes written to Alluxio storage managed by this worker "
+              + "without external RPC involved. This records data written "
+              + "by worker internal calls (e.g. a client embedded in this worker).")
+          .setMetricType(MetricType.COUNTER)
+          .setIsClusterAggregated(true)
+          .build();
+  public static final MetricKey WORKER_BYTES_WRITTEN_DIRECT_THROUGHPUT =
+      new Builder(Name.WORKER_BYTES_WRITTEN_DIRECT_THROUGHPUT)
+          .setDescription("Total number of bytes written to Alluxio storage managed by this worker "
+              + "without external RPC involved. This records data written "
+              + "by worker internal calls (e.g. a client embedded in this worker).")
           .setMetricType(MetricType.METER)
           .setIsClusterAggregated(false)
           .build();
@@ -987,6 +1143,13 @@ public final class MetricKey implements Comparable<MetricKey> {
           .setMetricType(MetricType.COUNTER)
           .setIsClusterAggregated(false)
           .build();
+  public static final MetricKey CLIENT_CACHE_PUT_INSUFFICIENT_SPACE_ERRORS =
+      new Builder(Name.CLIENT_CACHE_PUT_INSUFFICIENT_SPACE_ERRORS)
+          .setDescription("Number of failures when putting cached data in the client cache due to"
+              + " insufficient space made after eviction.")
+          .setMetricType(MetricType.COUNTER)
+          .setIsClusterAggregated(false)
+          .build();
   public static final MetricKey CLIENT_CACHE_PUT_BENIGN_RACING_ERRORS =
       new Builder(Name.CLIENT_CACHE_PUT_BENIGN_RACING_ERRORS)
           .setDescription("Number of failures when adding pages due to racing eviction. This error"
@@ -1107,9 +1270,26 @@ public final class MetricKey implements Comparable<MetricKey> {
   public static final class Name {
     // Master metrics
     // metrics names for master status
+    public static final String MASTER_ABSENT_CACHE_HITS = "Master.AbsentCacheHits";
+    public static final String MASTER_ABSENT_CACHE_MISSES = "Master.AbsentCacheMisses";
+    public static final String MASTER_ABSENT_CACHE_INVALIDATIONS
+        = "Master.AbsentCacheInvalidations";
+    public static final String MASTER_ABSENT_CACHE_SIZE = "Master.AbsentCacheSize";
+
+    public static final String MASTER_EDGE_CACHE_EVICTIONS = "Master.EdgeCacheEvictions";
+    public static final String MASTER_EDGE_CACHE_HITS = "Master.EdgeCacheHits";
+    public static final String MASTER_EDGE_CACHE_LOAD_TIMES = "Master.EdgeCacheLoadTimes";
+    public static final String MASTER_EDGE_CACHE_MISSES = "Master.EdgeCacheMisses";
     public static final String MASTER_EDGE_CACHE_SIZE = "Master.EdgeCacheSize";
+
     public static final String MASTER_FILES_PINNED = "Master.FilesPinned";
+
+    public static final String MASTER_INODE_CACHE_EVICTIONS = "Master.InodeCacheEvictions";
+    public static final String MASTER_INODE_CACHE_HITS = "Master.InodeCacheHits";
+    public static final String MASTER_INODE_CACHE_LOAD_TIMES = "Master.InodeCacheLoadTimes";
+    public static final String MASTER_INODE_CACHE_MISSES = "Master.InodeCacheMisses";
     public static final String MASTER_INODE_CACHE_SIZE = "Master.InodeCacheSize";
+
     public static final String MASTER_TOTAL_PATHS = "Master.TotalPaths";
 
     // metrics names for BackupManager
@@ -1141,6 +1321,10 @@ public final class MetricKey implements Comparable<MetricKey> {
     public static final String MASTER_GET_FILE_BLOCK_INFO_OPS = "Master.GetFileBlockInfoOps";
     public static final String MASTER_GET_FILE_INFO_OPS = "Master.GetFileInfoOps";
     public static final String MASTER_GET_NEW_BLOCK_OPS = "Master.GetNewBlockOps";
+    public static final String MASTER_LISTING_CACHE_EVICTIONS = "Master.ListingCacheEvictions";
+    public static final String MASTER_LISTING_CACHE_HITS = "Master.ListingCacheHits";
+    public static final String MASTER_LISTING_CACHE_LOAD_TIMES = "Master.ListingCacheLoadTimes";
+    public static final String MASTER_LISTING_CACHE_MISSES = "Master.ListingCacheMisses";
     public static final String MASTER_LISTING_CACHE_SIZE = "Master.ListingCacheSize";
     public static final String MASTER_MOUNT_OPS = "Master.MountOps";
     public static final String MASTER_RENAME_PATH_OPS = "Master.RenamePathOps";
@@ -1154,10 +1338,17 @@ public final class MetricKey implements Comparable<MetricKey> {
     public static final String MASTER_JOURNAL_FLUSH_FAILURE = "Master.JournalFlushFailure";
     public static final String MASTER_JOURNAL_FLUSH_TIMER = "Master.JournalFlushTimer";
     public static final String MASTER_JOURNAL_GAIN_PRIMACY_TIMER = "Master.JournalGainPrimacyTimer";
+    public static final String MASTER_UFS_JOURNAL_CATCHUP_TIMER
+        = "Master.UfsJournalCatchupTimer";
     public static final String MASTER_UFS_JOURNAL_FAILURE_RECOVER_TIMER
-        = "Master.UfsJournalFailureRecoverTime";
+        = "Master.UfsJournalFailureRecoverTimer";
+    public static final String MASTER_UFS_JOURNAL_INITIAL_REPLAY_TIME_MS
+        = "Master.UfsJournalInitialReplayTimeMs";
 
     // Cluster metrics
+    public static final String CLUSTER_BYTES_READ_DIRECT = "Cluster.BytesReadDirect";
+    public static final String CLUSTER_BYTES_READ_DIRECT_THROUGHPUT
+        = "Cluster.BytesReadDirectThroughput";
     public static final String CLUSTER_BYTES_READ_LOCAL = "Cluster.BytesReadLocal";
     public static final String CLUSTER_BYTES_READ_LOCAL_THROUGHPUT
         = "Cluster.BytesReadLocalThroughput";
@@ -1208,6 +1399,12 @@ public final class MetricKey implements Comparable<MetricKey> {
     public static final String WORKER_BLOCKS_EVICTED = "Worker.BlocksEvicted";
     public static final String WORKER_BLOCKS_LOST = "Worker.BlocksLost";
     public static final String WORKER_BLOCKS_PROMOTED = "Worker.BlocksPromoted";
+    public static final String WORKER_BYTES_READ_DIRECT = "Worker.BytesReadDirect";
+    public static final String WORKER_BYTES_READ_DIRECT_THROUGHPUT
+        = "Worker.BytesReadDirectThroughput";
+    public static final String WORKER_BYTES_WRITTEN_DIRECT = "Worker.BytesWrittenDirect";
+    public static final String WORKER_BYTES_WRITTEN_DIRECT_THROUGHPUT
+        = "Worker.BytesWrittenDirectThroughput";
     public static final String WORKER_BYTES_READ_REMOTE = "Worker.BytesReadRemote";
     public static final String WORKER_BYTES_READ_REMOTE_THROUGHPUT
         = "Worker.BytesReadRemoteThroughput";
@@ -1284,6 +1481,8 @@ public final class MetricKey implements Comparable<MetricKey> {
         "Client.CachePutEvictionErrors";
     public static final String CLIENT_CACHE_PUT_BENIGN_RACING_ERRORS =
         "Client.CachePutBenignRacingErrors";
+    public static final String CLIENT_CACHE_PUT_INSUFFICIENT_SPACE_ERRORS =
+        "Client.CachePutInsufficientSpaceErrors";
     public static final String CLIENT_CACHE_PUT_NOT_READY_ERRORS =
         "Client.CachePutNotReadyErrors";
     public static final String CLIENT_CACHE_PUT_STORE_DELETE_ERRORS =

@@ -23,8 +23,9 @@ configuration tuning for large scale deployments.
 
 ### Number of Files in Alluxio
 
-Files refers to files and directories. The number of files in Alluxio can be monitored through the
-metric `Master.TotalPaths`. A third party metrics collector can be used to monitor the rate of
+In this section "files" refers to regular files and directories.
+The number of files in Alluxio can be monitored through the metric `Master.TotalPaths`.
+A third party metrics collector can be used to monitor the rate of
 change of this metric to determine how the number of files are growing over time.
 
 The number of files in Alluxio impacts the following:
@@ -116,9 +117,16 @@ client. This resource is less important if a majority of tasks have locality and
 ### Heap Size
 
 The Alluxio master heap size controls the total number of files that can fit into the master memory.
-If using the ROCKS off-heap metastore, the master heap size must be large enough to fit the inode
-cache.
-Provision roughly 2 KB of space for each inode.
+Each file or directory will be represented by an inode in Alluxio, containing all its metadata.
+In general you should provision roughly 2 KB of space for each inode.
+
+If using `HEAP` metastore, all the inodes will be stored in the master heap. Therefore the master heap
+size must be large enough to fit ALL inodes.
+
+If using the `ROCKS` off-heap metastore, the master heap size must be large enough to fit the inode
+cache. See the [RocksDB section]({{ '/en/operation/Metastore.html#rocksdb-metastore' | relativize_url }})
+for more information.
+ 
 The following JVM options, set in `alluxio-env.sh`, determine the respective maximum heap sizes for
 the Alluxio master and standby master processes to `256 GB`:
 
@@ -248,7 +256,7 @@ The Alluxio worker’s network bandwidth to UFS determines the rate at which it 
 or populate the cache from the underlying storage. If the network link is shared with the compute
 nodes, the async caching options will need to be managed in order to ensure the appropriate ratio
 between serving client requests and populating the cache is respected.
-We recommend having a separate link for bandwidth the UFS. For every 10 Gbit/s bandwidth to compute
+We recommend having a separate link for bandwidth to the UFS. For every 10 Gbit/s bandwidth to compute
 nodes (across workers), we recommend having 1 Gbit/s bandwidth (across workers) to the UFS. This
 gives a ratio of at least 10:1. The UFS link throughput can be greatly decreased based on the
 expected cache hit ratio.
