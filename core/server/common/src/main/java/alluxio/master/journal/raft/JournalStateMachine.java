@@ -22,16 +22,20 @@ import alluxio.master.journal.CatchupFuture;
 import alluxio.master.journal.JournalUtils;
 import alluxio.master.journal.Journaled;
 import alluxio.master.journal.checkpoint.CheckpointInputStream;
+import alluxio.metrics.MetricKey;
+import alluxio.metrics.MetricsSystem;
 import alluxio.proto.journal.Journal.JournalEntry;
 import alluxio.util.LogUtils;
 import alluxio.util.StreamUtils;
 import alluxio.util.logging.SamplingLogger;
 
+import com.codahale.metrics.Timer;
 import com.google.common.base.Preconditions;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.ratis.io.MD5Hash;
 import org.apache.ratis.proto.RaftProtos;
 import org.apache.ratis.protocol.Message;
+import org.apache.ratis.protocol.RaftGroup;
 import org.apache.ratis.protocol.RaftGroupId;
 import org.apache.ratis.protocol.RaftGroupMemberId;
 import org.apache.ratis.protocol.RaftPeerId;
@@ -122,11 +126,15 @@ public class JournalStateMachine extends BaseStateMachine {
 
   // The start time of the most recent snapshot
   private volatile long mLastSnapshotStartTime = 0;
+  // The last index of the latest journal snapshot
+  // created by this master or downloaded from other masters
+  private volatile long mSnapshotLastIndex = -1;
   /** Used to control applying to masters. */
   private BufferedJournalApplier mJournalApplier;
   private final SimpleStateMachineStorage mStorage = new SimpleStateMachineStorage();
   private RaftGroupId mRaftGroupId;
   private RaftServer mServer;
+  private long mLastCheckPointTime = -1;
 
   /**
    * @param journals      master journals; these journals are still owned by the caller, not by the
@@ -141,6 +149,16 @@ public class JournalStateMachine extends BaseStateMachine {
     LOG.info("Initialized new journal state machine");
     mJournalSystem = journalSystem;
     mSnapshotManager = new SnapshotReplicationManager(journalSystem, mStorage);
+
+    MetricsSystem.registerGaugeIfAbsent(
+        MetricKey.MASTER_EMBEDDED_JOURNAL_SNAPSHOT_LAST_INDEX.getName(),
+        () -> mSnapshotLastIndex);
+    MetricsSystem.registerGaugeIfAbsent(
+        MetricKey.MASTER_JOURNAL_ENTRIES_SINCE_CHECKPOINT.getName(),
+        () -> getLastAppliedTermIndex().getIndex() - mSnapshotLastIndex);
+    MetricsSystem.registerGaugeIfAbsent(
+        MetricKey.MASTER_JOURNAL_LAST_CHECKPOINT_TIME.getName(),
+        () -> mLastCheckPointTime);
   }
 
   @Override
@@ -186,7 +204,21 @@ public class JournalStateMachine extends BaseStateMachine {
   @Override
   public long takeSnapshot() {
     if (mIsLeader) {
-      return mSnapshotManager.maybeCopySnapshotFromFollower();
+      try {
+        Preconditions.checkState(mServer.getGroups().iterator().hasNext());
+        RaftGroup group = mServer.getGroups().iterator().next();
+        Preconditions.checkState(group.getGroupId().equals(mRaftGroupId));
+        if (group.getPeers().size() < 2) {
+          SAMPLING_LOG.warn("No follower to perform delegated snapshot. Please add more masters to "
+              + "the quorum or manually take snapshot using 'alluxio fsadmin journal checkpoint'");
+          return RaftLog.INVALID_LOG_INDEX;
+        }
+      } catch (IOException e) {
+        SAMPLING_LOG.warn("Failed to get raft group info: {}", e.getMessage());
+      }
+      long index = mSnapshotManager.maybeCopySnapshotFromFollower();
+      mLastCheckPointTime = System.currentTimeMillis();
+      return index;
     } else {
       return takeLocalSnapshot();
     }
@@ -288,6 +320,7 @@ public class JournalStateMachine extends BaseStateMachine {
             String.format("Downloaded snapshot index %d is older than the latest entry index %d",
                 snapshotIndex.getIndex(), latestJournalIndex));
       }
+      mSnapshotLastIndex = snapshotIndex.getIndex();
       return snapshotIndex;
     });
   }
@@ -434,7 +467,8 @@ public class JournalStateMachine extends BaseStateMachine {
     LOG.debug("Calling snapshot");
     Preconditions.checkState(!mSnapshotting, "Cannot call snapshot multiple times concurrently");
     mSnapshotting = true;
-    try {
+    try (Timer.Context ctx = MetricsSystem
+        .timer(MetricKey.MASTER_EMBEDDED_JOURNAL_SNAPSHOT_GENERATE_TIMER.getName()).time()) {
       mLastSnapshotStartTime = System.currentTimeMillis();
       long snapshotId = mNextSequenceNumberToRead - 1;
       TermIndex last = getLastAppliedTermIndex();
@@ -481,6 +515,8 @@ public class JournalStateMachine extends BaseStateMachine {
         LogUtils.warnWithException(LOG, "Failed to refresh latest snapshot: {}", snapshotId, e);
         return RaftLog.INVALID_LOG_INDEX;
       }
+      mSnapshotLastIndex = last.getIndex();
+      mLastCheckPointTime = System.currentTimeMillis();
       return last.getIndex();
     } finally {
       mSnapshotting = false;
@@ -497,7 +533,9 @@ public class JournalStateMachine extends BaseStateMachine {
     }
 
     long snapshotId = 0L;
-    try (DataInputStream stream =  new DataInputStream(new FileInputStream(snapshotFile))) {
+    try (Timer.Context ctx = MetricsSystem.timer(MetricKey
+        .MASTER_EMBEDDED_JOURNAL_SNAPSHOT_REPLAY_TIMER.getName()).time();
+         DataInputStream stream =  new DataInputStream(new FileInputStream(snapshotFile))) {
       snapshotId = stream.readLong();
       JournalUtils.restoreFromCheckpoint(new CheckpointInputStream(stream), getStateMachines());
     } catch (Exception e) {
@@ -613,6 +651,13 @@ public class JournalStateMachine extends BaseStateMachine {
    */
   public long getLastPrimaryStartSequenceNumber() {
     return mLastPrimaryStartSequenceNumber;
+  }
+
+  /**
+   * @return the last raft log index which was applied to the state machine
+   */
+  public long getLastAppliedCommitIndex() {
+    return mLastAppliedCommitIndex;
   }
 
   /**

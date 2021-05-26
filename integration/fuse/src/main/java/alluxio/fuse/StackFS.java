@@ -16,6 +16,7 @@ import alluxio.jnifuse.ErrorCodes;
 import alluxio.jnifuse.FuseFillDir;
 import alluxio.jnifuse.struct.FileStat;
 import alluxio.jnifuse.struct.FuseFileInfo;
+import alluxio.metrics.MetricsSystem;
 import alluxio.util.io.FileUtils;
 
 import org.slf4j.Logger;
@@ -85,6 +86,11 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int getattr(String path, FileStat stat) {
+    return AlluxioFuseUtils.call(
+        LOG, () -> getattrInternal(path, stat), "Stackfs.Getattr", "path=%s", path);
+  }
+
+  private int getattrInternal(String path, FileStat stat) {
     path = transformPath(path);
     try {
       Path filePath = Paths.get(path);
@@ -116,15 +122,22 @@ public class StackFS extends AbstractFuseFileSystem {
   }
 
   @Override
-  public int readdir(String path, long bufaddr, long filter, long offset, FuseFileInfo fi) {
+  public int readdir(String path, long buff, long filter, long offset,
+      FuseFileInfo fi) {
+    return AlluxioFuseUtils.call(LOG, () -> readdirInternal(path, buff, filter, offset, fi),
+        "Stackfs.Readdir", "path=%s,buf=%s", path, buff);
+  }
+
+  private int readdirInternal(String path, long buff, long filter, long offset,
+      FuseFileInfo fi) {
     path = transformPath(path);
     File dir = new File(path);
-    FuseFillDir.apply(filter, bufaddr, ".", null, 0);
-    FuseFillDir.apply(filter, bufaddr, "..", null, 0);
+    FuseFillDir.apply(filter, buff, ".", null, 0);
+    FuseFillDir.apply(filter, buff, "..", null, 0);
     File[] subfiles = dir.listFiles();
     if (subfiles != null) {
       for (File subfile : subfiles) {
-        FuseFillDir.apply(filter, bufaddr, subfile.getName(), null, 0);
+        FuseFillDir.apply(filter, buff, subfile.getName(), null, 0);
       }
     }
     return 0;
@@ -132,6 +145,11 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int open(String path, FuseFileInfo fi) {
+    return AlluxioFuseUtils.call(LOG, () -> openInternal(path, fi),
+        "Stackfs.Open", "path=%s", path);
+  }
+
+  private int openInternal(String path, FuseFileInfo fi) {
     path = transformPath(path);
     try (FileInputStream fis = new FileInputStream(path)) {
       return 0;
@@ -143,12 +161,25 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int read(String path, ByteBuffer buf, long size, long offset, FuseFileInfo fi) {
+    return AlluxioFuseUtils.call(LOG, () -> readInternal(path, buf, size, offset, fi),
+        "Stackfs.Read", "path=%s,buf=%s,size=%d,offset=%d", path, buf, size, offset);
+  }
+
+  private int readInternal(String path, ByteBuffer buf, long size, long offset, FuseFileInfo fi) {
+    MetricsSystem.counter("Stackfs.BytesToRead").inc(size);
     path = transformPath(path);
+    final int sz = (int) size;
     int nread = 0;
+    byte[] tmpbuf = new byte[sz];
     try (FileInputStream fis = new FileInputStream(path)) {
-      byte[] tmpbuf = new byte[(int) size];
       long nskipped = fis.skip(offset);
-      nread = fis.read(tmpbuf, 0, (int) size);
+      int rd = 0;
+      while (rd >= 0 && nread < sz) {
+        rd = fis.read(tmpbuf, nread, sz - nread);
+        if (rd >= 0) {
+          nread += rd;
+        }
+      }
       buf.put(tmpbuf, 0, nread);
     } catch (IndexOutOfBoundsException e) {
       return 0;
@@ -156,11 +187,17 @@ public class StackFS extends AbstractFuseFileSystem {
       LOG.error("Failed to read {}", path, e);
       return -ErrorCodes.EIO();
     }
+    MetricsSystem.counter("Stackfs.BytesRead").inc(nread);
     return nread;
   }
 
   @Override
   public int create(String path, long mode, FuseFileInfo fi) {
+    return AlluxioFuseUtils.call(LOG, () -> createInternal(path, mode, fi),
+        "Stackfs.Create", "path=%s,mode=%o", path, mode);
+  }
+
+  private int createInternal(String path, long mode, FuseFileInfo fi) {
     path = transformPath(path);
     Path filePath = Paths.get(path);
     if (Files.exists(filePath)) {
@@ -178,6 +215,11 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int write(String path, ByteBuffer buf, long size, long offset, FuseFileInfo fi) {
+    return AlluxioFuseUtils.call(LOG, () -> writeInternal(path, buf, size, offset, fi),
+        "Stackfs.Write", "path=%s,buf=%s,size=%d,offset=%d", path, buf, size, offset);
+  }
+
+  private int writeInternal(String path, ByteBuffer buf, long size, long offset, FuseFileInfo fi) {
     path = transformPath(path);
     final int sz = (int) size;
     // TODO(lu) is it needed to check if offset < bytesWritten
@@ -186,6 +228,7 @@ public class StackFS extends AbstractFuseFileSystem {
       final byte[] dest = new byte[sz];
       buf.get(dest, 0, sz);
       outputStream.write(dest);
+      MetricsSystem.counter("Stackfs.BytesWritten").inc(sz);
       return sz;
     } catch (IOException e) {
       LOG.error("Failed to write to {}", path, e);
@@ -195,6 +238,11 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int mkdir(String path, long mode) {
+    return AlluxioFuseUtils.call(LOG, () -> mkdirInternal(path, mode),
+        "Stackfs.Mkdir", "path=%s,mode=%o,", path, mode);
+  }
+
+  private int mkdirInternal(String path, long mode) {
     path = transformPath(path);
     Path dirPath = Paths.get(path);
     if (Files.exists(dirPath)) {
@@ -212,6 +260,11 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int unlink(String path) {
+    return AlluxioFuseUtils.call(LOG, () -> unlinkInternal(path),
+        "Stackfs.Unlink", "path=%s", path);
+  }
+
+  private int unlinkInternal(String path) {
     path = transformPath(path);
     Path filePath = Paths.get(path);
     if (!Files.exists(filePath)) {
@@ -228,6 +281,11 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int rename(String oldPath, String newPath) {
+    return AlluxioFuseUtils.call(LOG, () -> renameInternal(oldPath, newPath),
+        "Stackfs.Rename", "oldPath=%s,newPath=%s,", oldPath, newPath);
+  }
+
+  private int renameInternal(String oldPath, String newPath) {
     oldPath = transformPath(oldPath);
     newPath = transformPath(newPath);
     Path oldFilePath = Paths.get(oldPath);
@@ -251,6 +309,11 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int chmod(String path, long mode) {
+    return AlluxioFuseUtils.call(LOG, () -> chmodInternal(path, mode),
+        "Stackfs.Chmod", "path=%s,mode=%o", path, mode);
+  }
+
+  private int chmodInternal(String path, long mode) {
     path = transformPath(path);
     Path filePath = Paths.get(path);
     if (!Files.exists(filePath)) {
@@ -268,6 +331,11 @@ public class StackFS extends AbstractFuseFileSystem {
 
   @Override
   public int chown(String path, long uid, long gid) {
+    return AlluxioFuseUtils.call(LOG, () -> chownInternal(path, uid, gid),
+        "Stackfs.Chown", "path=%s,uid=%o,gid=%o", path, uid, gid);
+  }
+
+  private int chownInternal(String path, long uid, long gid) {
     path = transformPath(path);
     Path filePath = Paths.get(path);
     if (!Files.exists(filePath)) {

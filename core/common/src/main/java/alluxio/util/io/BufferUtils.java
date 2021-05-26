@@ -37,7 +37,7 @@ import javax.annotation.concurrent.ThreadSafe;
 public final class BufferUtils {
   private static final Logger LOG = LoggerFactory.getLogger(BufferUtils.class);
   private static final Object LOCK = new Object();
-
+  private static final int TRANSFER_BUFFER_SIZE = 4 * Constants.MB;
   private static Method sCleanerCleanMethod;
   private static Method sByteBufferCleanerMethod;
   private static Class sUnsafeClass;
@@ -109,7 +109,7 @@ public final class BufferUtils {
       sByteBufferCleanerMethod.invoke(theUnsafe, buffer);
     } catch (Exception e) {
       LOG.warn("Failed to unmap direct ByteBuffer: {}, error message: {}",
-          buffer.getClass().getName(), e.getMessage());
+          buffer.getClass().getName(), e.toString());
     }
   }
 
@@ -157,7 +157,7 @@ public final class BufferUtils {
       sCleanerCleanMethod.invoke(cleaner);
     } catch (Exception e) {
       LOG.warn("Failed to unmap direct ByteBuffer: {}, error message: {}",
-                buffer.getClass().getName(), e.getMessage());
+          buffer.getClass().getName(), e.toString());
     } finally {
       // Force to drop reference to the buffer to clean
       buffer = null;
@@ -357,20 +357,21 @@ public final class BufferUtils {
    * @param src the source channel
    * @param dest the destination channel
    */
-  public static void fastCopy(final ReadableByteChannel src, final WritableByteChannel dest)
+  public static void transfer(final ReadableByteChannel src, final WritableByteChannel dest)
       throws IOException {
-    final ByteBuffer buffer = ByteBuffer.allocateDirect(4 * Constants.MB);
-
-    while (src.read(buffer) != -1) {
+    final ByteBuffer buffer = ByteBuffer.allocateDirect(TRANSFER_BUFFER_SIZE);
+    try {
+      while (src.read(buffer) != -1) {
+        buffer.flip();
+        dest.write(buffer);
+        buffer.compact();
+      }
       buffer.flip();
-      dest.write(buffer);
-      buffer.compact();
-    }
-
-    buffer.flip();
-
-    while (buffer.hasRemaining()) {
-      dest.write(buffer);
+      while (buffer.hasRemaining()) {
+        dest.write(buffer);
+      }
+    } finally {
+      cleanDirectBuffer(buffer);
     }
   }
 
